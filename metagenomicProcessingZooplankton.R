@@ -4,6 +4,7 @@ setwd("/Users/pakpoomton/qiime/zooplankton/otus/")
 # name .biom and .tre files
 biomName = "otu_table_mc2_w_tax_no_pynast_failures.biom"
 treeName = "rep_set.tre"
+sampleDataName = "sampleDataZooplankton.csv"
 
 # specify which taxonomic level to create stack plot (Phylum, Class, Order, Family, Genus, Species)
 OTUlevel = "Rank3"
@@ -32,15 +33,18 @@ theme_set(theme_bw())
 biomOTUTax = import_biom(biomName)  # otu table & taxonomic table
 phyloTree = read.tree(treeName)     # phylogenetic tree
 
+sampleData = read.csv(sampleDataName, sep = ',', header = T)
+
+sDat = sample_data(sampleData)
+row.names(sDat) = sampleData$SampleID
+  
 # create phyloseq object
-physeq = phyloseq(otu_table(biomOTUTax), tax_table(biomOTUTax), phyloTree)
+physeq = phyloseq(otu_table(biomOTUTax), tax_table(biomOTUTax), phyloTree, sDat)
 
 # group data by pre-specified OTUlevel
 phyloGlom = tax_glom(physeq, OTUlevel)
 
 ###
-
-
 
 ## for taxonomic matrix, exclude data at levels below OTUlevel
 TAXmt = tax_table(phyloGlom)
@@ -85,5 +89,22 @@ print(p)
 ggsave(filename = "myplot.png", plot = last_plot(), 
        width=40, height=40, unit="cm")
 
+###########################
+
+#Remove OTUs that do not show appear more than 2 times in more than 1/3 the samples
+wh0 = genefilter_sample(physeq, filterfun_sample(function(x) x > 5), A=0.33*nsamples(physeq))
+physeq1 = prune_taxa(wh0, physeq)
+
+# Transform to even sampling depth.
+physeq1 = transform_sample_counts(physeq1, function(x) 1E6 * x/sum(x))
+
+# Keep only the most abundant five phyla.
+phylum.sum = tapply(taxa_sums(physeq1), tax_table(physeq1)[, "Rank2"], sum, na.rm=TRUE)
+top5phyla = names(sort(phylum.sum, TRUE))[1:5]
+physeq1 = prune_taxa((tax_table(physeq1)[, "Rank2"] %in% top5phyla), physeq1)
+
+## MDS (“PCoA”) on Unifrac Distances
+ordu = ordinate(physeq1, "PCoA", "unifrac", weighted=TRUE)
+plot_ordination(physeq1, ordu, , color="SampleType")
 
 ### ref. https://github.com/joey711/phyloseq/issues/616 
